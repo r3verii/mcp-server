@@ -15,6 +15,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.toSerializableForm
+import net.portswigger.mcp.schema.toSummaryForm
 import net.portswigger.mcp.security.DataAccessSecurity
 import net.portswigger.mcp.security.DataAccessType
 import net.portswigger.mcp.security.HttpRequestSecurity
@@ -352,6 +353,36 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
+    mcpPaginatedTool<ListOrganizerItems>("Lists Organizer items as a compact index: id, method, host, path, HTTP status code, organizer status, notes and request/response sizes, WITHOUT the request/response bodies. Use this first to see every item, then fetch the full request/response of the ones you need with get_organizer_items_by_id. The 'id' is the same id accepted by get_organizer_items_by_id.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
+        }
+        if (!allowed) {
+            return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
+        }
+
+        api.organizer().items().asSequence().map { Json.encodeToString(it.toSummaryForm()) }
+    }
+
+    mcpTool<GetOrganizerItemsById>("Returns the full Organizer items (request, response, notes) for the given id(s). Get the ids from list_organizer_items.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
+        }
+        if (!allowed) {
+            return@mcpTool "Organizer access denied by Burp Suite"
+        }
+
+        val wanted = ids.toSet()
+        val items = api.organizer().items().filter { it.id() in wanted }
+        if (items.isEmpty()) {
+            "No Organizer items match id(s): $ids"
+        } else {
+            items.joinToString(separator = "\n\n") {
+                truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength)
+            }
+        }
+    }
+
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
@@ -524,6 +555,12 @@ data class GetOrganizerItems(override val count: Int, override val offset: Int) 
 
 @Serializable
 data class GetOrganizerItemsRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class ListOrganizerItems(override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetOrganizerItemsById(val ids: List<Int>)
 
 @Serializable
 data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated

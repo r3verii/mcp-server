@@ -63,6 +63,21 @@ fun OrganizerItem.toSerializableForm(): OrganizerItemDetails {
     )
 }
 
+fun OrganizerItem.toSummaryForm(): OrganizerItemSummary {
+    val req = request()
+    return OrganizerItemSummary(
+        id = id(),
+        method = req?.method(),
+        host = httpService()?.host(),
+        path = req?.path(),
+        httpStatusCode = response()?.statusCode()?.toInt(),
+        status = status().displayName(),
+        notes = annotations().notes(),
+        requestLength = req?.toString()?.length ?: 0,
+        responseLength = response()?.toString()?.length ?: 0
+    )
+}
+
 fun ProxyWebSocketMessage.toSerializableForm(): WebSocketMessage {
     return WebSocketMessage(
         payload = payload()?.toString() ?: "<no payload>",
@@ -126,6 +141,19 @@ data class OrganizerItemDetails(
     val request: String?,
     val response: String?,
     val notes: String?
+)
+
+@Serializable
+data class OrganizerItemSummary(
+    val id: Int,
+    val method: String?,
+    val host: String?,
+    val path: String?,
+    val httpStatusCode: Int?,
+    val status: String,
+    val notes: String?,
+    val requestLength: Int,
+    val responseLength: Int
 )
 
 @Serializable
