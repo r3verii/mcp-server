@@ -14,6 +14,8 @@ import java.awt.GridBagLayout
 import javax.swing.*
 import javax.swing.Box.*
 import javax.swing.JOptionPane.ERROR_MESSAGE
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
 
 class ConfigUi(private val config: McpConfig, private val providers: List<Provider>) {
 
@@ -43,6 +45,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val validationErrorLabel = WarningLabel()
     private val hostField = JTextField(15)
     private val portField = JTextField(5)
+    private val maxItemLengthField = JTextField(7)
     private val reinstallNotice = WarningLabel("Make sure to reinstall after changing server settings")
 
     private lateinit var serverConfigurationPanel: ServerConfigurationPanel
@@ -63,6 +66,15 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         enabledToggle.setState(config.enabled, animate = false)
         hostField.text = config.host
         portField.text = config.port.toString()
+        maxItemLengthField.text = config.maxItemLength.toString()
+        maxItemLengthField.document.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(e: DocumentEvent?) = persist()
+            override fun removeUpdate(e: DocumentEvent?) = persist()
+            override fun changedUpdate(e: DocumentEvent?) = persist()
+            fun persist() {
+                maxItemLengthField.text.toIntOrNull()?.takeIf { it > 0 }?.let { config.maxItemLength = it }
+            }
+        })
 
         initializeComponents()
         buildUi()
@@ -74,7 +86,10 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         )
 
         advancedOptionsPanel = AdvancedOptionsPanel(
-            hostField = hostField, portField = portField, reinstallNotice = reinstallNotice
+            hostField = hostField,
+            portField = portField,
+            maxItemLengthField = maxItemLengthField,
+            reinstallNotice = reinstallNotice
         )
 
         autoApproveTargetsPanel = AutoApproveTargetsPanel(config = config)
@@ -107,6 +122,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     fun getConfig(): McpConfig {
         config.host = hostField.text
         portField.text.toIntOrNull()?.let { config.port = it }
+        maxItemLengthField.text.toIntOrNull()?.takeIf { it > 0 }?.let { config.maxItemLength = it }
         return config
     }
 

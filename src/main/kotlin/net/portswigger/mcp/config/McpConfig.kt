@@ -9,12 +9,16 @@ import kotlin.reflect.KProperty
 
 private const val TARGET_SEPARATOR = "\n"
 
+/** Default per-item output limit (characters of the serialized JSON) for the history/Organizer tools. */
+private const val DEFAULT_MAX_ITEM_LENGTH = 100_000
+
 class McpConfig(storage: PersistedObject, private val logging: Logging) {
 
     var enabled by storage.boolean(true)
     var configEditingTooling by storage.boolean(false)
     var host by storage.string("127.0.0.1")
     var port by storage.int(9876)
+    var maxItemLength by storage.int(DEFAULT_MAX_ITEM_LENGTH)
     var requireHttpRequestApproval by storage.boolean(true)
     var requireDataAccessApproval by storage.boolean(true)
 

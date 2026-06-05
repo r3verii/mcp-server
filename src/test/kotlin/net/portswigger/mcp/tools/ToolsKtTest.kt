@@ -65,6 +65,7 @@ class ToolsKtTest {
             every { getString("host") } returns "127.0.0.1"
             every { getString("_autoApproveTargets") } returns ""
             every { getInteger("port") } returns testPort
+            every { getInteger("maxItemLength") } returns 100000
             every { setBoolean(any(), any()) } returns Unit
             every { setString(any(), any()) } returns Unit
             every { setInteger(any(), any()) } returns Unit
