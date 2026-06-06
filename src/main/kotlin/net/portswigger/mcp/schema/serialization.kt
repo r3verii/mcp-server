@@ -78,6 +78,30 @@ fun OrganizerItem.toSummaryForm(): OrganizerItemSummary {
     )
 }
 
+fun ProxyHttpRequestResponse.toHistorySummary(index: Int): ProxyHistorySummary {
+    val req = request()
+    return ProxyHistorySummary(
+        index = index,
+        method = req?.method(),
+        host = req?.httpService()?.host(),
+        path = req?.path(),
+        httpStatusCode = response()?.statusCode()?.toInt(),
+        responseLength = response()?.toString()?.length ?: 0,
+        notes = annotations().notes()
+    )
+}
+
+fun burp.api.montoya.http.message.HttpRequestResponse.toSiteMapSummary(): SiteMapEntrySummary {
+    val req = request()
+    return SiteMapEntrySummary(
+        method = req?.method(),
+        host = req?.httpService()?.host(),
+        path = req?.path(),
+        httpStatusCode = response()?.statusCode()?.toInt(),
+        responseLength = response()?.toString()?.length ?: 0
+    )
+}
+
 fun ProxyWebSocketMessage.toSerializableForm(): WebSocketMessage {
     return WebSocketMessage(
         payload = payload()?.toString() ?: "<no payload>",
@@ -153,6 +177,26 @@ data class OrganizerItemSummary(
     val status: String,
     val notes: String?,
     val requestLength: Int,
+    val responseLength: Int
+)
+
+@Serializable
+data class ProxyHistorySummary(
+    val index: Int,
+    val method: String?,
+    val host: String?,
+    val path: String?,
+    val httpStatusCode: Int?,
+    val responseLength: Int,
+    val notes: String?
+)
+
+@Serializable
+data class SiteMapEntrySummary(
+    val method: String?,
+    val host: String?,
+    val path: String?,
+    val httpStatusCode: Int?,
     val responseLength: Int
 )
 

@@ -4,7 +4,10 @@ import burp.api.montoya.MontoyaApi
 import burp.api.montoya.burpsuite.TaskExecutionEngine.TaskExecutionEngineState.PAUSED
 import burp.api.montoya.burpsuite.TaskExecutionEngine.TaskExecutionEngineState.RUNNING
 import burp.api.montoya.collaborator.InteractionFilter
+import burp.api.montoya.core.Annotations
 import burp.api.montoya.core.BurpSuiteEdition
+import burp.api.montoya.core.HighlightColor
+import burp.api.montoya.sitemap.SiteMapFilter
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
@@ -16,6 +19,8 @@ import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.toSerializableForm
 import net.portswigger.mcp.schema.toSummaryForm
+import net.portswigger.mcp.schema.toHistorySummary
+import net.portswigger.mcp.schema.toSiteMapSummary
 import net.portswigger.mcp.security.DataAccessSecurity
 import net.portswigger.mcp.security.DataAccessType
 import net.portswigger.mcp.security.HttpRequestSecurity
@@ -383,6 +388,106 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
     }
 
+    mcpPaginatedTool<GetSiteMap>("Lists site map entries as a compact index (method, host, path, HTTP status code, response size), optionally under a URL prefix, WITHOUT bodies. Use this to review the discovered attack surface.") {
+        val items = if (prefix.isNullOrBlank()) {
+            api.siteMap().requestResponses()
+        } else {
+            api.siteMap().requestResponses(SiteMapFilter.prefixFilter(prefix))
+        }
+        items.asSequence().map { Json.encodeToString(it.toSiteMapSummary()) }
+    }
+
+    mcpTool<SendToOrganizer>("Sends an HTTP request and its live response to Burp's Organizer, optionally with a note. Use this to save interesting requests for later analysis or reporting.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
+        }
+        if (!allowed) {
+            return@mcpTool "Organizer access denied by Burp Suite"
+        }
+
+        val request = HttpRequest.httpRequest(toMontoyaService(), normalizeHttpContent(content))
+        val requestResponse = api.http().sendRequest(request)
+        val annotated = if (notes != null) {
+            requestResponse.withAnnotations(Annotations.annotations(notes))
+        } else {
+            requestResponse
+        }
+        api.organizer().sendToOrganizer(annotated)
+
+        "Sent to Organizer${notes?.let { " with note" } ?: ""}"
+    }
+
+    mcpTool<SetOrganizerItemNotes>("Sets the notes on an Organizer item, identified by the id from list_organizer_items. Useful to tag items (pseudo-collections) or record findings.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
+        }
+        if (!allowed) {
+            return@mcpTool "Organizer access denied by Burp Suite"
+        }
+
+        val item = api.organizer().items().firstOrNull { it.id() == id }
+            ?: return@mcpTool "No Organizer item with id $id"
+        item.annotations().setNotes(notes)
+        "Notes updated for Organizer item $id"
+    }
+
+    mcpTool<SetOrganizerItemHighlight>("Sets the highlight color of an Organizer item (id from list_organizer_items). Colors: RED, ORANGE, YELLOW, GREEN, CYAN, BLUE, PINK, MAGENTA, GRAY, NONE.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
+        }
+        if (!allowed) {
+            return@mcpTool "Organizer access denied by Burp Suite"
+        }
+
+        val item = api.organizer().items().firstOrNull { it.id() == id }
+            ?: return@mcpTool "No Organizer item with id $id"
+        val color = try {
+            HighlightColor.valueOf(colorName.trim().uppercase())
+        } catch (e: Exception) {
+            return@mcpTool "Invalid color: $colorName"
+        }
+        item.annotations().setHighlightColor(color)
+        "Highlight updated for Organizer item $id"
+    }
+
+    mcpPaginatedTool<ListProxyHttpHistory>("Lists proxy HTTP history as a compact index (index, method, host, path, HTTP status code, size, notes), optionally filtered by host substring, WITHOUT bodies. Use get_proxy_http_history_by_index for the full request/response. 'index' is the position in the history list.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
+        }
+        if (!allowed) {
+            return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
+        }
+
+        val indexed = api.proxy().history().asSequence().withIndex()
+        val filtered = if (hostFilter.isNullOrBlank()) {
+            indexed
+        } else {
+            indexed.filter { (_, rr) ->
+                rr.request()?.httpService()?.host()?.contains(hostFilter, ignoreCase = true) == true
+            }
+        }
+        filtered.map { (idx, rr) -> Json.encodeToString(rr.toHistorySummary(idx)) }
+    }
+
+    mcpTool<GetProxyHttpHistoryByIndex>("Returns full proxy HTTP history items (request, response, notes) for the given indices, as listed by list_proxy_http_history.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
+        }
+        if (!allowed) {
+            return@mcpTool "HTTP history access denied by Burp Suite"
+        }
+
+        val history = api.proxy().history()
+        val items = indices.mapNotNull { history.getOrNull(it) }
+        if (items.isEmpty()) {
+            "No history items at indices: $indices"
+        } else {
+            items.joinToString(separator = "\n\n") {
+                truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength)
+            }
+        }
+    }
+
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
@@ -561,6 +666,30 @@ data class ListOrganizerItems(override val count: Int, override val offset: Int)
 
 @Serializable
 data class GetOrganizerItemsById(val ids: List<Int>)
+
+@Serializable
+data class GetSiteMap(val prefix: String? = null, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class SendToOrganizer(
+    val content: String,
+    val notes: String? = null,
+    override val targetHostname: String,
+    override val targetPort: Int,
+    override val usesHttps: Boolean
+) : HttpServiceParams
+
+@Serializable
+data class SetOrganizerItemNotes(val id: Int, val notes: String)
+
+@Serializable
+data class SetOrganizerItemHighlight(val id: Int, val colorName: String)
+
+@Serializable
+data class ListProxyHttpHistory(val hostFilter: String? = null, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetProxyHttpHistoryByIndex(val indices: List<Int>)
 
 @Serializable
 data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated
