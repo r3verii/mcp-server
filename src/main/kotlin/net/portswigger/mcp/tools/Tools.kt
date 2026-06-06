@@ -122,6 +122,42 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\r", "")          // Actual CR → remove
     .replace("\n", "\r\n")      // All LF → proper CRLF
 
+/**
+ * Usage manual sent to the MCP client at initialize time (MCP server "instructions").
+ * Teaches the client to use the compact index tools and fetch details on demand instead of
+ * dumping everything.
+ */
+val SERVER_INSTRUCTIONS = """
+    This server exposes Burp Suite data and actions for web security testing.
+
+    GOLDEN RULE — be precise, never dump everything. To read recorded traffic, ALWAYS start
+    with a compact INDEX tool (it returns id/method/host/path/status/sizes WITHOUT bodies, so
+    you can scan many items cheaply), identify the item(s) by method+host+path, then fetch only
+    those full request/response by id/index:
+      - Organizer:      list_organizer_items        -> get_organizer_items_by_id(ids)
+      - Proxy history:  list_proxy_http_history(hostFilter?) -> get_proxy_http_history_by_index(indices)
+      - Site map:       get_site_map(prefix?)        (compact index of the attack surface)
+      - Repeater:       get_repeater_traffic         -> get_captured_exchange_by_id(ids)
+      - Intruder:       get_intruder_traffic         -> get_captured_exchange_by_id(ids)
+
+    AVOID the raw bulk tools (get_proxy_http_history, get_organizer_items,
+    get_proxy_websocket_history): they return FULL request+response per item and can produce
+    huge output that gets truncated. Only use them with a SMALL count, and only when you
+    actually need the bodies.
+
+    Filter instead of scanning: list_proxy_http_history takes a hostFilter; get_site_map takes a
+    URL prefix; the *_regex tools match request/response content.
+
+    count/offset are pagination over item COUNT (not bytes): keep count small, page with offset.
+
+    When the user says "read/look at the X request", first list the relevant index, match X by
+    method+host+path, then fetch that single item by id/index — do not pull everything.
+
+    Save/triage findings: send_to_organizer (saves a request+response, optional note),
+    set_organizer_item_notes / set_organizer_item_highlight (tag items by id; notes work as
+    ad-hoc "collections"). Sending requests respects Burp's scope/approval rules.
+""".trimIndent()
+
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     TrafficStore.ensureRegistered(api)
@@ -313,7 +349,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
     }
 
-    mcpPaginatedTool<GetProxyHttpHistory>("Displays items within the proxy HTTP history") {
+    mcpPaginatedTool<GetProxyHttpHistory>("Displays proxy HTTP history items with FULL request and response bodies (can be very large). PREFER list_proxy_http_history for a compact index, then get_proxy_http_history_by_index for the items you need. If you use this, keep count small.") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
         }
@@ -337,7 +373,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
-    mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
+    mcpPaginatedTool<GetOrganizerItems>("Displays Organizer items with FULL request and response bodies (can be very large). PREFER list_organizer_items for a compact index, then get_organizer_items_by_id for the items you need. If you use this, keep count small.") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
         }
@@ -500,7 +536,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
     }
 
-    mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
+    mcpPaginatedTool<GetProxyWebsocketHistory>("Displays proxy WebSocket messages with full payloads. Keep count small to avoid large output.") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
         }
