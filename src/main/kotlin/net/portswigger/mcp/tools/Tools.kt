@@ -408,8 +408,17 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpTool "Organizer access denied by Burp Suite"
         }
 
+        val allowedHttp = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
+        }
+        if (!allowedHttp) {
+            api.logging().logToOutput("MCP send_to_organizer denied: $targetHostname:$targetPort")
+            return@mcpTool "Send HTTP request denied by Burp Suite"
+        }
+
         val request = HttpRequest.httpRequest(toMontoyaService(), normalizeHttpContent(content))
         val requestResponse = api.http().sendRequest(request)
+            ?: return@mcpTool "No response received; nothing was sent to Organizer"
         val annotated = if (notes != null) {
             requestResponse.withAnnotations(Annotations.annotations(notes))
         } else {
@@ -517,14 +526,35 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpPaginatedTool<GetRepeaterTraffic>("Lists HTTP traffic captured from Burp Repeater while this extension has been loaded, as a compact index (messageId, method, host, path, HTTP status, sizes) WITHOUT bodies. NOTE: Burp's API cannot read existing Repeater tabs, so only Sends made after the extension was loaded are captured (re-Send an old tab to capture it). Use get_captured_exchange_by_id for the full request/response.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "Repeater traffic")
+        }
+        if (!allowed) {
+            return@mcpPaginatedTool sequenceOf("Repeater traffic access denied by Burp Suite")
+        }
+
         TrafficStore.summaries(ToolType.REPEATER).map { Json.encodeToString(it) }
     }
 
     mcpPaginatedTool<GetIntruderTraffic>("Lists HTTP traffic captured from Burp Intruder attacks run while this extension has been loaded, as a compact index (messageId, method, host, path, HTTP status, sizes) WITHOUT bodies. Use get_captured_exchange_by_id for the full request/response of specific ids.") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "Intruder traffic")
+        }
+        if (!allowed) {
+            return@mcpPaginatedTool sequenceOf("Intruder traffic access denied by Burp Suite")
+        }
+
         TrafficStore.summaries(ToolType.INTRUDER).map { Json.encodeToString(it) }
     }
 
     mcpTool<GetCapturedExchangeById>("Returns the full request/response of captured Repeater/Intruder exchanges by their messageId (from get_repeater_traffic / get_intruder_traffic).") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "captured traffic")
+        }
+        if (!allowed) {
+            return@mcpTool "Captured traffic access denied by Burp Suite"
+        }
+
         val matches = TrafficStore.byIds(ids.toSet())
         if (matches.isEmpty()) {
             "No captured exchanges with messageId(s): $ids"

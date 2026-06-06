@@ -8,6 +8,14 @@ import burp.api.montoya.scanner.audit.issues.AuditIssue
 import burp.api.montoya.websocket.Direction
 import kotlinx.serialization.Serializable
 
+/**
+ * Montoya's HttpRequest.method()/path()/url() and HttpResponse.statusCode() can throw
+ * MalformedRequestException/RuntimeException on malformed messages (common in a pentest
+ * workspace). Use this so a single bad item degrades to null fields instead of failing
+ * the whole listing.
+ */
+private inline fun <T> safeMontoya(block: () -> T): T? = try { block() } catch (e: Exception) { null }
+
 fun AuditIssue.toSerializableForm(): IssueDetails {
     return IssueDetails(
         name = name(),
@@ -67,14 +75,14 @@ fun OrganizerItem.toSummaryForm(): OrganizerItemSummary {
     val req = request()
     return OrganizerItemSummary(
         id = id(),
-        method = req?.method(),
-        host = httpService()?.host(),
-        path = req?.path(),
-        httpStatusCode = response()?.statusCode()?.toInt(),
+        method = req?.let { safeMontoya { it.method() } },
+        host = safeMontoya { httpService()?.host() },
+        path = req?.let { safeMontoya { it.path() } },
+        httpStatusCode = safeMontoya { response()?.statusCode()?.toInt() },
         status = status().displayName(),
         notes = annotations().notes(),
         requestLength = req?.toString()?.length ?: 0,
-        responseLength = response()?.toString()?.length ?: 0
+        responseLength = safeMontoya { response()?.toString()?.length } ?: 0
     )
 }
 
@@ -82,11 +90,11 @@ fun ProxyHttpRequestResponse.toHistorySummary(index: Int): ProxyHistorySummary {
     val req = request()
     return ProxyHistorySummary(
         index = index,
-        method = req?.method(),
-        host = req?.httpService()?.host(),
-        path = req?.path(),
-        httpStatusCode = response()?.statusCode()?.toInt(),
-        responseLength = response()?.toString()?.length ?: 0,
+        method = req?.let { safeMontoya { it.method() } },
+        host = req?.let { safeMontoya { it.httpService()?.host() } },
+        path = req?.let { safeMontoya { it.path() } },
+        httpStatusCode = safeMontoya { response()?.statusCode()?.toInt() },
+        responseLength = safeMontoya { response()?.toString()?.length } ?: 0,
         notes = annotations().notes()
     )
 }
@@ -94,11 +102,11 @@ fun ProxyHttpRequestResponse.toHistorySummary(index: Int): ProxyHistorySummary {
 fun burp.api.montoya.http.message.HttpRequestResponse.toSiteMapSummary(): SiteMapEntrySummary {
     val req = request()
     return SiteMapEntrySummary(
-        method = req?.method(),
-        host = req?.httpService()?.host(),
-        path = req?.path(),
-        httpStatusCode = response()?.statusCode()?.toInt(),
-        responseLength = response()?.toString()?.length ?: 0
+        method = req?.let { safeMontoya { it.method() } },
+        host = req?.let { safeMontoya { it.httpService()?.host() } },
+        path = req?.let { safeMontoya { it.path() } },
+        httpStatusCode = safeMontoya { response()?.statusCode()?.toInt() },
+        responseLength = safeMontoya { response()?.toString()?.length } ?: 0
     )
 }
 
