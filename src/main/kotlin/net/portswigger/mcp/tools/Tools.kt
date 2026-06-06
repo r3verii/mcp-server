@@ -7,6 +7,7 @@ import burp.api.montoya.collaborator.InteractionFilter
 import burp.api.montoya.core.Annotations
 import burp.api.montoya.core.BurpSuiteEdition
 import burp.api.montoya.core.HighlightColor
+import burp.api.montoya.core.ToolType
 import burp.api.montoya.sitemap.SiteMapFilter
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
@@ -122,6 +123,8 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\n", "\r\n")      // All LF → proper CRLF
 
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
+
+    TrafficStore.ensureRegistered(api)
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {
@@ -513,6 +516,28 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
+    mcpPaginatedTool<GetRepeaterTraffic>("Lists HTTP traffic captured from Burp Repeater while this extension has been loaded, as a compact index (messageId, method, host, path, HTTP status, sizes) WITHOUT bodies. NOTE: Burp's API cannot read existing Repeater tabs, so only Sends made after the extension was loaded are captured (re-Send an old tab to capture it). Use get_captured_exchange_by_id for the full request/response.") {
+        TrafficStore.summaries(ToolType.REPEATER).map { Json.encodeToString(it) }
+    }
+
+    mcpPaginatedTool<GetIntruderTraffic>("Lists HTTP traffic captured from Burp Intruder attacks run while this extension has been loaded, as a compact index (messageId, method, host, path, HTTP status, sizes) WITHOUT bodies. Use get_captured_exchange_by_id for the full request/response of specific ids.") {
+        TrafficStore.summaries(ToolType.INTRUDER).map { Json.encodeToString(it) }
+    }
+
+    mcpTool<GetCapturedExchangeById>("Returns the full request/response of captured Repeater/Intruder exchanges by their messageId (from get_repeater_traffic / get_intruder_traffic).") {
+        val matches = TrafficStore.byIds(ids.toSet())
+        if (matches.isEmpty()) {
+            "No captured exchanges with messageId(s): $ids"
+        } else {
+            matches.joinToString(separator = "\n\n") {
+                truncateIfNeeded(
+                    Json.encodeToString(CapturedExchangeDetail(it.messageId, it.tool, it.request, it.response)),
+                    config.maxItemLength
+                )
+            }
+        }
+    }
+
     mcpTool<SetTaskExecutionEngineState>("Sets the state of Burp's task execution engine (paused or unpaused)") {
         api.burpSuite().taskExecutionEngine().state = if (running) RUNNING else PAUSED
 
@@ -690,6 +715,15 @@ data class ListProxyHttpHistory(val hostFilter: String? = null, override val cou
 
 @Serializable
 data class GetProxyHttpHistoryByIndex(val indices: List<Int>)
+
+@Serializable
+data class GetRepeaterTraffic(override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetIntruderTraffic(override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetCapturedExchangeById(val ids: List<Int>)
 
 @Serializable
 data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated
