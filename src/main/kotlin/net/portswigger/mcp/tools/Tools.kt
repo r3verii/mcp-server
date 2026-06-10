@@ -135,7 +135,8 @@ val SERVER_INSTRUCTIONS = """
     you can scan many items cheaply), identify the item(s) by method+host+path, then fetch only
     those full request/response by id/index:
       - Organizer:      list_organizer_items        -> get_organizer_items_by_id(ids)
-      - Proxy history:  list_proxy_http_history(hostFilter?) -> get_proxy_http_history_by_index(indices)
+      - Proxy history:  list_proxy_http_history(hostFilter?, newestFirst?) -> get_proxy_http_history_by_index(indices)
+        (for the latest/most-recent N requests use newestFirst=true with count=N)
       - Site map:       get_site_map(prefix?)        (compact index of the attack surface)
       - Repeater:       get_repeater_traffic         -> get_captured_exchange_by_id(ids)
       - Intruder:       get_intruder_traffic         -> get_captured_exchange_by_id(ids)
@@ -498,7 +499,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         "Highlight updated for Organizer item $id"
     }
 
-    mcpPaginatedTool<ListProxyHttpHistory>("Lists proxy HTTP history as a compact index (index, method, host, path, HTTP status code, size, notes), optionally filtered by host substring, WITHOUT bodies. Use get_proxy_http_history_by_index for the full request/response. 'index' is the position in the history list.") {
+    mcpPaginatedTool<ListProxyHttpHistory>("Lists proxy HTTP history as a compact index (index, method, host, path, HTTP status code, size, notes), optionally filtered by host substring, WITHOUT bodies. Order is chronological (index 0 = oldest). Set newestFirst=true to get the most recent first — e.g. newestFirst=true, count=10, offset=0 returns the last 10 requests. 'index' is the absolute position in the history; pass it to get_proxy_http_history_by_index for the full request/response.") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
         }
@@ -506,11 +507,13 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        val indexed = api.proxy().history().asSequence().withIndex()
+        val indexed = api.proxy().history().withIndex().let { iv ->
+            if (newestFirst == true) iv.reversed() else iv.toList()
+        }
         val filtered = if (hostFilter.isNullOrBlank()) {
-            indexed
+            indexed.asSequence()
         } else {
-            indexed.filter { (_, rr) ->
+            indexed.asSequence().filter { (_, rr) ->
                 rr.request()?.httpService()?.host()?.contains(hostFilter, ignoreCase = true) == true
             }
         }
@@ -777,7 +780,12 @@ data class SetOrganizerItemNotes(val id: Int, val notes: String)
 data class SetOrganizerItemHighlight(val id: Int, val colorName: String)
 
 @Serializable
-data class ListProxyHttpHistory(val hostFilter: String? = null, override val count: Int, override val offset: Int) : Paginated
+data class ListProxyHttpHistory(
+    val hostFilter: String? = null,
+    val newestFirst: Boolean? = false,
+    override val count: Int,
+    override val offset: Int
+) : Paginated
 
 @Serializable
 data class GetProxyHttpHistoryByIndex(val indices: List<Int>)
