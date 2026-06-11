@@ -134,7 +134,7 @@ val SERVER_INSTRUCTIONS = """
     with a compact INDEX tool (it returns id/method/host/path/status/sizes WITHOUT bodies, so
     you can scan many items cheaply), identify the item(s) by method+host+path, then fetch only
     those full request/response by id/index:
-      - Organizer:      list_organizer_items        -> get_organizer_items_by_id(ids)
+      - Organizer:      list_organizer_items(newestFirst?) -> get_organizer_items_by_id(ids)
       - Proxy history:  list_proxy_http_history(hostFilter?, newestFirst?) -> get_proxy_http_history_by_index(indices)
         (for the latest/most-recent N requests use newestFirst=true with count=N)
       - Site map:       get_site_map(prefix?)        (compact index of the attack surface)
@@ -398,7 +398,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
-    mcpPaginatedTool<ListOrganizerItems>("Lists Organizer items as a compact index: id, method, host, path, HTTP status code, organizer status, notes and request/response sizes, WITHOUT the request/response bodies. Use this first to see every item, then fetch the full request/response of the ones you need with get_organizer_items_by_id. The 'id' is the same id accepted by get_organizer_items_by_id.") {
+    mcpPaginatedTool<ListOrganizerItems>("Lists Organizer items as a compact index: id, method, host, path, HTTP status code, organizer status, notes and request/response sizes, WITHOUT the request/response bodies. Use this first to see every item, then fetch the full request/response of the ones you need with get_organizer_items_by_id. Set newestFirst=true to list the most recently added items first. The 'id' is the same id accepted by get_organizer_items_by_id.") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
         }
@@ -406,7 +406,9 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
         }
 
-        api.organizer().items().asSequence().map { Json.encodeToString(it.toSummaryForm()) }
+        val items = api.organizer().items()
+        val ordered = if (newestFirst == true) items.reversed() else items
+        ordered.asSequence().map { Json.encodeToString(it.toSummaryForm()) }
     }
 
     mcpTool<GetOrganizerItemsById>("Returns the full Organizer items (request, response, notes) for the given id(s). Get the ids from list_organizer_items.") {
@@ -756,7 +758,7 @@ data class GetOrganizerItems(override val count: Int, override val offset: Int) 
 data class GetOrganizerItemsRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
-data class ListOrganizerItems(override val count: Int, override val offset: Int) : Paginated
+data class ListOrganizerItems(val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
 data class GetOrganizerItemsById(val ids: List<Int>)
