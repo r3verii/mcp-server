@@ -12,6 +12,9 @@ import java.util.concurrent.ConcurrentLinkedDeque
 
 private const val MAX_CAPTURED_EXCHANGES = 1000
 
+/** Montoya's method()/path()/statusCode() can throw on malformed messages (e.g. Intruder payloads). */
+private inline fun <T> safeCapture(block: () -> T): T? = try { block() } catch (e: Exception) { null }
+
 /**
  * In-memory ring buffer of HTTP traffic seen by tools that the Montoya API cannot otherwise
  * expose (Repeater, Intruder). The Montoya API has no way to read existing Repeater tabs or
@@ -51,10 +54,10 @@ object TrafficStore {
                         CapturedExchange(
                             messageId = responseReceived.messageId(),
                             tool = tool.name,
-                            method = req?.method(),
-                            host = req?.httpService()?.host(),
-                            path = req?.path(),
-                            httpStatusCode = responseReceived.statusCode().toInt(),
+                            method = req?.let { safeCapture { it.method() } },
+                            host = req?.let { safeCapture { it.httpService()?.host() } },
+                            path = req?.let { safeCapture { it.path() } },
+                            httpStatusCode = safeCapture { responseReceived.statusCode().toInt() },
                             request = req?.toString() ?: "<no request>",
                             response = responseReceived.toString()
                         )

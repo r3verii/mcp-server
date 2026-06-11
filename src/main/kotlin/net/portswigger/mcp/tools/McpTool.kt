@@ -28,7 +28,7 @@ internal fun coerceWholeNumberFloats(element: JsonElement): JsonElement = when (
     is JsonArray -> JsonArray(element.map { coerceWholeNumberFloats(it) })
     is JsonPrimitive ->
         if (!element.isString && WHOLE_NUMBER_FLOAT.matches(element.content)) {
-            JsonPrimitive(element.content.substringBefore('.').toLong())
+            element.content.substringBefore('.').toLongOrNull()?.let { JsonPrimitive(it) } ?: element
         } else {
             element
         }

@@ -457,7 +457,6 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val request = HttpRequest.httpRequest(toMontoyaService(), normalizeHttpContent(content))
         val requestResponse = api.http().sendRequest(request)
-            ?: return@mcpTool "No response received; nothing was sent to Organizer"
         val annotated = if (notes != null) {
             requestResponse.withAnnotations(Annotations.annotations(notes))
         } else {
@@ -465,7 +464,12 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
         api.organizer().sendToOrganizer(annotated)
 
-        "Sent to Organizer${notes?.let { " with note" } ?: ""}"
+        val noteSuffix = if (notes != null) " with note" else ""
+        if (requestResponse.response() == null) {
+            "Sent request to Organizer$noteSuffix (no response received)"
+        } else {
+            "Sent to Organizer$noteSuffix"
+        }
     }
 
     mcpTool<SetOrganizerItemNotes>("Sets the notes on an Organizer item, identified by the id from list_organizer_items. Useful to tag items (pseudo-collections) or record findings.") {
