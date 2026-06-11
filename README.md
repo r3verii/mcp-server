@@ -27,7 +27,7 @@ must read Burp data **precisely** instead of dumping huge amounts of traffic. Fu
   - Proxy history: `list_proxy_http_history` + `get_proxy_http_history_by_index`
   - Repeater/Intruder: `get_repeater_traffic`, `get_intruder_traffic` + `get_captured_exchange_by_id`
 - Organizer write-back: `send_to_organizer` + `set_organizer_item_notes` / `set_organizer_item_highlight`
-- `newestFirst` ("last N requests") on proxy history and the organizer
+- `newestFirst` ("last N requests") on every history/traffic list tool
 - MCP server `instructions` (a usage manual the client reads at startup) + anti-dump tool descriptions
 
 **Hardening of the new tools (self-review)**

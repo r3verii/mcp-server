@@ -50,6 +50,10 @@ private fun truncateIfNeeded(serialized: String, maxLength: Int): String {
     }
 }
 
+/** Returns the list newest-first (reversed view) when [newestFirst] is true, otherwise unchanged. */
+private fun <T> List<T>.orderedBy(newestFirst: Boolean?): List<T> =
+    if (newestFirst == true) asReversed() else this
+
 private fun buildHttp2HeaderList(
     pseudoHeaders: Map<String, String>, headers: Map<String, String>
 ): List<HttpHeader> {
@@ -150,6 +154,8 @@ val SERVER_INSTRUCTIONS = """
     URL prefix; the *_regex tools match request/response content.
 
     count/offset are pagination over item COUNT (not bytes): keep count small, page with offset.
+    Most history/traffic list tools also accept newestFirst=true to return the most recent items
+    first (e.g. newestFirst=true, count=5 = the 5 latest).
 
     When the user says "read/look at the X request", first list the relevant index, match X by
     method+host+path, then fetch that single item by id/index — do not pull everything.
@@ -358,7 +364,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
+        api.proxy().history().orderedBy(newestFirst).asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
@@ -370,7 +376,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val compiledRegex = Pattern.compile(regex)
-        api.proxy().history { it.contains(compiledRegex) }.asSequence()
+        api.proxy().history { it.contains(compiledRegex) }.orderedBy(newestFirst).asSequence()
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
@@ -382,7 +388,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
         }
 
-        api.organizer().items().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
+        api.organizer().items().orderedBy(newestFirst).asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
     mcpPaginatedTool<GetOrganizerItemsRegex>("Displays items matching a specified regex within the Organizer tab") {
@@ -394,7 +400,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val compiledRegex = Pattern.compile(regex)
-        api.organizer().items { it.contains(compiledRegex) }.asSequence()
+        api.organizer().items { it.contains(compiledRegex) }.orderedBy(newestFirst).asSequence()
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
@@ -553,7 +559,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
         }
 
-        api.proxy().webSocketHistory().asSequence()
+        api.proxy().webSocketHistory().orderedBy(newestFirst).asSequence()
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
@@ -566,7 +572,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val compiledRegex = Pattern.compile(regex)
-        api.proxy().webSocketHistory { it.contains(compiledRegex) }.asSequence()
+        api.proxy().webSocketHistory { it.contains(compiledRegex) }.orderedBy(newestFirst).asSequence()
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.maxItemLength) }
     }
 
@@ -578,7 +584,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("Repeater traffic access denied by Burp Suite")
         }
 
-        TrafficStore.summaries(ToolType.REPEATER).map { Json.encodeToString(it) }
+        TrafficStore.summaries(ToolType.REPEATER, newestFirst == true).map { Json.encodeToString(it) }
     }
 
     mcpPaginatedTool<GetIntruderTraffic>("Lists HTTP traffic captured from Burp Intruder attacks run while this extension has been loaded, as a compact index (messageId, method, host, path, HTTP status, sizes) WITHOUT bodies. Use get_captured_exchange_by_id for the full request/response of specific ids.") {
@@ -589,7 +595,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("Intruder traffic access denied by Burp Suite")
         }
 
-        TrafficStore.summaries(ToolType.INTRUDER).map { Json.encodeToString(it) }
+        TrafficStore.summaries(ToolType.INTRUDER, newestFirst == true).map { Json.encodeToString(it) }
     }
 
     mcpTool<GetCapturedExchangeById>("Returns the full request/response of captured Repeater/Intruder exchanges by their messageId (from get_repeater_traffic / get_intruder_traffic).") {
@@ -750,16 +756,16 @@ data class SetActiveEditorContents(val text: String)
 data class GetScannerIssues(override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
-data class GetProxyHttpHistory(override val count: Int, override val offset: Int) : Paginated
+data class GetProxyHttpHistory(val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
-data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+data class GetProxyHttpHistoryRegex(val regex: String, val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
-data class GetOrganizerItems(override val count: Int, override val offset: Int) : Paginated
+data class GetOrganizerItems(val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
-data class GetOrganizerItemsRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+data class GetOrganizerItemsRegex(val regex: String, val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
 data class ListOrganizerItems(val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
@@ -797,19 +803,19 @@ data class ListProxyHttpHistory(
 data class GetProxyHttpHistoryByIndex(val indices: List<Int>)
 
 @Serializable
-data class GetRepeaterTraffic(override val count: Int, override val offset: Int) : Paginated
+data class GetRepeaterTraffic(val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
-data class GetIntruderTraffic(override val count: Int, override val offset: Int) : Paginated
+data class GetIntruderTraffic(val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
 data class GetCapturedExchangeById(val ids: List<Int>)
 
 @Serializable
-data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated
+data class GetProxyWebsocketHistory(val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
-data class GetProxyWebsocketHistoryRegex(val regex: String, override val count: Int, override val offset: Int) :
+data class GetProxyWebsocketHistoryRegex(val regex: String, val newestFirst: Boolean? = false, override val count: Int, override val offset: Int) :
     Paginated
 
 @Serializable

@@ -36,9 +36,10 @@ manual (MCP `instructions`) that teaches the client this workflow automatically.
 - `list_proxy_http_history` / `get_proxy_http_history_by_index`
 - `get_repeater_traffic`, `get_intruder_traffic` / `get_captured_exchange_by_id`
 
-Order helpers: `list_proxy_http_history` and `list_organizer_items` take `newestFirst=true`
-(latest first; e.g. `newestFirst=true, count=10` = the last 10). The reported `index` for proxy
-history is the **absolute** position, valid for `get_proxy_http_history_by_index` in any order.
+Order helpers: every history/traffic list tool (proxy HTTP history, organizer, WebSocket history,
+Repeater/Intruder traffic, and the `*_regex` variants) takes `newestFirst=true` (latest first;
+e.g. `newestFirst=true, count=10` = the last 10). The reported `index` for proxy history is the
+**absolute** position, valid for `get_proxy_http_history_by_index` in any order.
 
 ## Known limits (upstream Montoya API, NOT fixable in this fork)
 

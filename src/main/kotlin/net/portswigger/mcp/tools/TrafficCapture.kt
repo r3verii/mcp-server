@@ -73,9 +73,10 @@ object TrafficStore {
         registered = true
     }
 
-    fun summaries(tool: ToolType): Sequence<CapturedExchangeSummary> =
-        exchanges.asSequence()
-            .filter { it.tool == tool.name }
+    fun summaries(tool: ToolType, newestFirst: Boolean): Sequence<CapturedExchangeSummary> {
+        val matching = exchanges.filter { it.tool == tool.name }
+        val ordered = if (newestFirst) matching.asReversed() else matching
+        return ordered.asSequence()
             .map {
                 CapturedExchangeSummary(
                     messageId = it.messageId,
@@ -88,6 +89,7 @@ object TrafficStore {
                     responseLength = it.response.length
                 )
             }
+    }
 
     fun byIds(ids: Set<Int>): List<CapturedExchange> =
         exchanges.filter { it.messageId in ids }
