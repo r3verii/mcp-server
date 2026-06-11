@@ -81,8 +81,8 @@ fun OrganizerItem.toSummaryForm(): OrganizerItemSummary {
         httpStatusCode = safeMontoya { response()?.statusCode()?.toInt() },
         status = status().displayName(),
         notes = annotations().notes(),
-        requestLength = req?.toString()?.length ?: 0,
-        responseLength = safeMontoya { response()?.toString()?.length } ?: 0
+        requestLength = req?.let { safeMontoya { it.toByteArray().length() } } ?: 0,
+        responseLength = safeMontoya { response()?.toByteArray()?.length() } ?: 0
     )
 }
 
@@ -94,7 +94,7 @@ fun ProxyHttpRequestResponse.toHistorySummary(index: Int): ProxyHistorySummary {
         host = req?.let { safeMontoya { it.httpService()?.host() } },
         path = req?.let { safeMontoya { it.path() } },
         httpStatusCode = safeMontoya { response()?.statusCode()?.toInt() },
-        responseLength = safeMontoya { response()?.toString()?.length } ?: 0,
+        responseLength = safeMontoya { response()?.toByteArray()?.length() } ?: 0,
         notes = annotations().notes()
     )
 }
@@ -106,7 +106,7 @@ fun burp.api.montoya.http.message.HttpRequestResponse.toSiteMapSummary(): SiteMa
         host = req?.let { safeMontoya { it.httpService()?.host() } },
         path = req?.let { safeMontoya { it.path() } },
         httpStatusCode = safeMontoya { response()?.statusCode()?.toInt() },
-        responseLength = safeMontoya { response()?.toString()?.length } ?: 0
+        responseLength = safeMontoya { response()?.toByteArray()?.length() } ?: 0
     )
 }
 

@@ -24,8 +24,28 @@ private val WHOLE_NUMBER_FLOAT = Regex("""^-?\d+\.0+$""")
 
 @PublishedApi
 internal fun coerceWholeNumberFloats(element: JsonElement): JsonElement = when (element) {
-    is JsonObject -> JsonObject(element.mapValues { coerceWholeNumberFloats(it.value) })
-    is JsonArray -> JsonArray(element.map { coerceWholeNumberFloats(it) })
+    is JsonObject -> {
+        var changed = false
+        val mapped = LinkedHashMap<String, JsonElement>(element.size)
+        for ((key, value) in element) {
+            val coerced = coerceWholeNumberFloats(value)
+            if (coerced !== value) changed = true
+            mapped[key] = coerced
+        }
+        if (changed) JsonObject(mapped) else element
+    }
+
+    is JsonArray -> {
+        var changed = false
+        val mapped = ArrayList<JsonElement>(element.size)
+        for (value in element) {
+            val coerced = coerceWholeNumberFloats(value)
+            if (coerced !== value) changed = true
+            mapped.add(coerced)
+        }
+        if (changed) JsonArray(mapped) else element
+    }
+
     is JsonPrimitive ->
         if (!element.isString && WHOLE_NUMBER_FLOAT.matches(element.content)) {
             element.content.substringBefore('.').toLongOrNull()?.let { JsonPrimitive(it) } ?: element

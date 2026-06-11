@@ -8,9 +8,9 @@ import burp.api.montoya.http.handler.HttpResponseReceived
 import burp.api.montoya.http.handler.RequestToBeSentAction
 import burp.api.montoya.http.handler.ResponseReceivedAction
 import kotlinx.serialization.Serializable
-import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.ConcurrentHashMap
 
-private const val MAX_CAPTURED_EXCHANGES = 1000
+private const val MAX_CAPTURED_PER_TOOL = 1000
 
 /** Montoya's method()/path()/statusCode() can throw on malformed messages (e.g. Intruder payloads). */
 private inline fun <T> safeCapture(block: () -> T): T? = try { block() } catch (e: Exception) { null }
@@ -33,10 +33,26 @@ data class CapturedExchange(
 )
 
 object TrafficStore {
-    private val exchanges = ConcurrentLinkedDeque<CapturedExchange>()
+    /** One bounded buffer per tool, so a large Intruder run can't evict Repeater captures. */
+    private val buffers = ConcurrentHashMap<String, ToolBuffer>()
 
     @Volatile
     private var registered = false
+
+    private class ToolBuffer {
+        private val items = ArrayDeque<CapturedExchange>()
+
+        @Synchronized
+        fun add(exchange: CapturedExchange) {
+            items.addLast(exchange)
+            while (items.size > MAX_CAPTURED_PER_TOOL) {
+                items.removeFirst()
+            }
+        }
+
+        @Synchronized
+        fun snapshot(): List<CapturedExchange> = ArrayList(items)
+    }
 
     @Synchronized
     fun ensureRegistered(api: MontoyaApi) {
@@ -50,21 +66,17 @@ object TrafficStore {
                 val tool = responseReceived.toolSource().toolType()
                 if (tool == ToolType.REPEATER || tool == ToolType.INTRUDER) {
                     val req = responseReceived.initiatingRequest()
-                    exchanges.addLast(
-                        CapturedExchange(
-                            messageId = responseReceived.messageId(),
-                            tool = tool.name,
-                            method = req?.let { safeCapture { it.method() } },
-                            host = req?.let { safeCapture { it.httpService()?.host() } },
-                            path = req?.let { safeCapture { it.path() } },
-                            httpStatusCode = safeCapture { responseReceived.statusCode().toInt() },
-                            request = req?.toString() ?: "<no request>",
-                            response = responseReceived.toString()
-                        )
+                    val exchange = CapturedExchange(
+                        messageId = responseReceived.messageId(),
+                        tool = tool.name,
+                        method = req?.let { safeCapture { it.method() } },
+                        host = req?.let { safeCapture { it.httpService()?.host() } },
+                        path = req?.let { safeCapture { it.path() } },
+                        httpStatusCode = safeCapture { responseReceived.statusCode().toInt() },
+                        request = req?.toString() ?: "<no request>",
+                        response = responseReceived.toString()
                     )
-                    while (exchanges.size > MAX_CAPTURED_EXCHANGES) {
-                        exchanges.pollFirst()
-                    }
+                    buffers.computeIfAbsent(tool.name) { ToolBuffer() }.add(exchange)
                 }
                 return ResponseReceivedAction.continueWith(responseReceived)
             }
@@ -74,25 +86,27 @@ object TrafficStore {
     }
 
     fun summaries(tool: ToolType, newestFirst: Boolean): Sequence<CapturedExchangeSummary> {
-        val matching = exchanges.filter { it.tool == tool.name }
-        val ordered = if (newestFirst) matching.asReversed() else matching
-        return ordered.asSequence()
-            .map {
-                CapturedExchangeSummary(
-                    messageId = it.messageId,
-                    tool = it.tool,
-                    method = it.method,
-                    host = it.host,
-                    path = it.path,
-                    httpStatusCode = it.httpStatusCode,
-                    requestLength = it.request.length,
-                    responseLength = it.response.length
-                )
-            }
+        val snapshot = buffers[tool.name]?.snapshot() ?: emptyList()
+        val ordered = if (newestFirst) snapshot.asReversed() else snapshot
+        return ordered.asSequence().map {
+            CapturedExchangeSummary(
+                messageId = it.messageId,
+                tool = it.tool,
+                method = it.method,
+                host = it.host,
+                path = it.path,
+                httpStatusCode = it.httpStatusCode,
+                requestLength = it.request.length,
+                responseLength = it.response.length
+            )
+        }
     }
 
     fun byIds(ids: Set<Int>): List<CapturedExchange> =
-        exchanges.filter { it.messageId in ids }
+        buffers.values.asSequence()
+            .flatMap { it.snapshot().asSequence() }
+            .filter { it.messageId in ids }
+            .toList()
 }
 
 @Serializable

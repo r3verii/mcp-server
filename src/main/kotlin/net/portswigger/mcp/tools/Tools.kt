@@ -519,13 +519,13 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        val indexed = api.proxy().history().withIndex().let { iv ->
-            if (newestFirst == true) iv.reversed() else iv.toList()
-        }
+        val history = api.proxy().history()
+        val order = if (newestFirst == true) history.indices.reversed() else history.indices
+        val indexed = order.asSequence().map { i -> i to history[i] }
         val filtered = if (hostFilter.isNullOrBlank()) {
-            indexed.asSequence()
+            indexed
         } else {
-            indexed.asSequence().filter { (_, rr) ->
+            indexed.filter { (_, rr) ->
                 rr.request()?.httpService()?.host()?.contains(hostFilter, ignoreCase = true) == true
             }
         }
