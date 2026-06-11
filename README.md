@@ -6,6 +6,35 @@ Integrate Burp Suite with AI Clients using the Model Context Protocol (MCP).
 
 For more information about the protocol visit: [modelcontextprotocol.io](https://modelcontextprotocol.io/)
 
+## This fork — what's different from upstream
+
+A customized fork focused on an AI-assisted bug-bounty / pentest workflow, where the AI client
+must read Burp data **precisely** instead of dumping huge amounts of traffic. Full details in
+[CUSTOMIZATIONS.md](CUSTOMIZATIONS.md).
+
+**Bug fixes (issues in the original repo)**
+- Hard-coded 5000-char per-item truncation (responses were almost always cut off) → made
+  configurable (`maxItemLength`, default 100000) with a UI field.
+- Integer arguments sent as floats (e.g. `count = 10.0`) made the paginated tools fail
+  ([#28](https://github.com/PortSwigger/mcp-server/issues/28)) → whole-number floats are now
+  coerced to integers.
+- Flaky integration test (1s server-start timeout) → raised to 3s.
+
+**Additions (11 new MCP tools)**
+- Index → detail tools (scan cheaply, then fetch only what you need):
+  - Organizer: `list_organizer_items` + `get_organizer_items_by_id`
+  - Site map: `get_site_map`
+  - Proxy history: `list_proxy_http_history` + `get_proxy_http_history_by_index`
+  - Repeater/Intruder: `get_repeater_traffic`, `get_intruder_traffic` + `get_captured_exchange_by_id`
+- Organizer write-back: `send_to_organizer` + `set_organizer_item_notes` / `set_organizer_item_highlight`
+- `newestFirst` ("last N requests") on proxy history and the organizer
+- MCP server `instructions` (a usage manual the client reads at startup) + anti-dump tool descriptions
+
+**Hardening of the new tools (self-review)**
+- `send_to_organizer`: added the HTTP scope/approval check (it was bypassing it)
+- Resilient summaries (a single malformed request no longer breaks a whole listing)
+- Data-access gate on the Repeater/Intruder traffic tools
+
 ## Features
 
 - Connect Burp Suite to AI clients through MCP

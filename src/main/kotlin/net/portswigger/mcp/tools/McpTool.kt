@@ -7,9 +7,32 @@ import io.modelcontextprotocol.kotlin.sdk.Tool
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.serializer
 import net.portswigger.mcp.schema.asInputSchema
 import kotlin.experimental.ExperimentalTypeInference
+
+/**
+ * Some MCP clients send integer arguments as JSON floats (e.g. count = 10.0), which fail to
+ * deserialize into Int/Long. This rewrites whole-number floats (10.0 -> 10) anywhere in the
+ * arguments before decoding. See https://github.com/PortSwigger/mcp-server/issues/28
+ */
+private val WHOLE_NUMBER_FLOAT = Regex("""^-?\d+\.0+$""")
+
+@PublishedApi
+internal fun coerceWholeNumberFloats(element: JsonElement): JsonElement = when (element) {
+    is JsonObject -> JsonObject(element.mapValues { coerceWholeNumberFloats(it.value) })
+    is JsonArray -> JsonArray(element.map { coerceWholeNumberFloats(it) })
+    is JsonPrimitive ->
+        if (!element.isString && WHOLE_NUMBER_FLOAT.matches(element.content)) {
+            JsonPrimitive(element.content.substringBefore('.').toLong())
+        } else {
+            element
+        }
+}
 
 @OptIn(InternalSerializationApi::class)
 inline fun <reified I : Any> Server.mcpTool(
@@ -28,7 +51,7 @@ inline fun <reified I : Any> Server.mcpTool(
                     content = execute(
                         Json.decodeFromJsonElement(
                             I::class.serializer(),
-                            request.arguments
+                            coerceWholeNumberFloats(request.arguments)
                         )
                     )
                 )
